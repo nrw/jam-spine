@@ -499,9 +499,7 @@ makeArray = (args) ->
 
 # Globals
 
-Spine = @Spine   = {}
-module?.exports  = Spine
-
+Spine            = {}
 Spine.version    = '1.0.8'
 Spine.isArray    = isArray
 Spine.isBlank    = isBlank
@@ -533,3 +531,16 @@ Model.setup = (name, attributes = []) ->
   Instance
 
 Spine.Class = Module
+
+((root, factory) ->
+  if typeof exports is "object"    
+    # Node
+    module.exports = factory()
+  else if typeof define is "function" and define.amd
+    # AMD. Register as an anonymous module.
+    define [], factory
+  else
+    # Browser globals
+    root.Spine = factory()
+) this, ->
+  Spine

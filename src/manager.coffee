@@ -1,83 +1,93 @@
-Spine  = @Spine or require('spine')
-$      = Spine.$
+((root, factory) ->
+  if typeof exports is "object"    
+    # Node.
+    module.exports = factory('spine')
+  else if typeof define is "function" and define.amd
+    # AMD. Register as an anonymous module.
+    define ['spine'], factory
+  else
+    # Browser globals
+    root.Spine ?= {}
+    root.Spine.Manager = factory(root.Spine)
+) this, (Spine) ->
+  $      = Spine.$
 
-class Spine.Manager extends Spine.Module
-  @include Spine.Events
+  class Spine.Manager extends Spine.Module
+    @include Spine.Events
 
-  constructor: ->
-    @controllers = []
-    @bind 'change', @change
-    @add(arguments...)
+    constructor: ->
+      @controllers = []
+      @bind 'change', @change
+      @add(arguments...)
 
-  add: (controllers...) ->
-    @addOne(cont) for cont in controllers
+    add: (controllers...) ->
+      @addOne(cont) for cont in controllers
 
-  addOne: (controller) ->
-    controller.bind 'active', (args...) =>
-      @trigger('change', controller, args...)
-    controller.bind 'release', =>
-      @controllers.splice(@controllers.indexOf(controller), 1)
+    addOne: (controller) ->
+      controller.bind 'active', (args...) =>
+        @trigger('change', controller, args...)
+      controller.bind 'release', =>
+        @controllers.splice(@controllers.indexOf(controller), 1)
 
-    @controllers.push(controller)
+      @controllers.push(controller)
 
-  deactivate: ->
-    @trigger('change', false, arguments...)
+    deactivate: ->
+      @trigger('change', false, arguments...)
 
-  # Private
+    # Private
 
-  change: (current, args...) ->
-    for cont in @controllers
-      if cont is current
-        cont.activate(args...)
+    change: (current, args...) ->
+      for cont in @controllers
+        if cont is current
+          cont.activate(args...)
+        else
+          cont.deactivate(args...)
+
+  Spine.Controller.include
+    active: (args...) ->
+      if typeof args[0] is 'function'
+        @bind('active', args[0])
       else
-        cont.deactivate(args...)
+        args.unshift('active')
+        @trigger(args...)
+      @
 
-Spine.Controller.include
-  active: (args...) ->
-    if typeof args[0] is 'function'
-      @bind('active', args[0])
-    else
-      args.unshift('active')
-      @trigger(args...)
-    @
+    isActive: ->
+      @el.hasClass('active')
 
-  isActive: ->
-    @el.hasClass('active')
+    activate: ->
+      @el.addClass('active')
+      @
 
-  activate: ->
-    @el.addClass('active')
-    @
+    deactivate: ->
+      @el.removeClass('active')
+      @
 
-  deactivate: ->
-    @el.removeClass('active')
-    @
+  class Spine.Stack extends Spine.Controller
+    controllers: {}
+    routes: {}
 
-class Spine.Stack extends Spine.Controller
-  controllers: {}
-  routes: {}
+    className: 'spine stack'
 
-  className: 'spine stack'
+    constructor: ->
+      super
 
-  constructor: ->
-    super
+      @manager = new Spine.Manager
 
-    @manager = new Spine.Manager
+      for key, value of @controllers
+        @[key] = new value(stack: @)
+        @add(@[key])
 
-    for key, value of @controllers
-      @[key] = new value(stack: @)
-      @add(@[key])
+      for key, value of @routes
+        do (key, value) =>
+          callback = value if typeof value is 'function'
+          callback or= => @[value].active(arguments...)
+          @route(key, callback)
 
-    for key, value of @routes
-      do (key, value) =>
-        callback = value if typeof value is 'function'
-        callback or= => @[value].active(arguments...)
-        @route(key, callback)
+      @[@default].active() if @default
 
-    @[@default].active() if @default
+    add: (controller) ->
+      @manager.add(controller)
+      @append(controller)
 
-  add: (controller) ->
-    @manager.add(controller)
-    @append(controller)
-
-module?.exports = Spine.Manager
-module?.exports.Stack = Spine.Stack
+  Spine.Manager

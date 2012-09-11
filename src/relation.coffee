@@ -1,144 +1,156 @@
-Spine   = @Spine or require('spine')
-isArray = Spine.isArray
-require = @require or ((value) -> eval(value))
+((root, factory) ->
+  if typeof exports is "object"    
+    # Node.
+    module.exports = factory('spine')
+  else if typeof define is "function" and define.amd
+    # AMD. Register as an anonymous module.
+    define ['spine'], factory
+  else
+    root.Spine ?= {}
+    root.Spine = factory(root.Spine)
+) this, (Spine) ->
 
-class Collection extends Spine.Module
-  constructor: (options = {}) ->
-    for key, value of options
-      @[key] = value
+  isArray = Spine.isArray
+  demand = (value) -> eval(value)
 
-  all: ->
-    @model.select (rec) => @associated(rec)
+  class Collection extends Spine.Module
+    constructor: (options = {}) ->
+      for key, value of options
+        @[key] = value
 
-  first: ->
-    @all()[0]
+    all: ->
+      @model.select (rec) => @associated(rec)
 
-  last: ->
-    values = @all()
-    values[values.length - 1]
+    first: ->
+      @all()[0]
 
-  find: (id) ->
-    records = @select (rec) =>
-      rec.id + '' is id + ''
-    throw('Unknown record') unless records[0]
-    records[0]
+    last: ->
+      values = @all()
+      values[values.length - 1]
 
-  findAllByAttribute: (name, value) ->
-    @model.select (rec) =>
-      @associated(rec) and rec[name] is value
+    find: (id) ->
+      records = @select (rec) =>
+        rec.id + '' is id + ''
+      throw('Unknown record') unless records[0]
+      records[0]
 
-  findByAttribute: (name, value) ->
-    @findAllByAttribute(name, value)[0]
+    findAllByAttribute: (name, value) ->
+      @model.select (rec) =>
+        @associated(rec) and rec[name] is value
 
-  select: (cb) ->
-    @model.select (rec) =>
-      @associated(rec) and cb(rec)
+    findByAttribute: (name, value) ->
+      @findAllByAttribute(name, value)[0]
 
-  refresh: (values) ->
-    delete @model.records[record.id] for record in @all()
-    records = @model.fromJSON(values)
+    select: (cb) ->
+      @model.select (rec) =>
+        @associated(rec) and cb(rec)
 
-    records = [records] unless isArray(records)
+    refresh: (values) ->
+      delete @model.records[record.id] for record in @all()
+      records = @model.fromJSON(values)
 
-    for record in records
-      record.newRecord = false
+      records = [records] unless isArray(records)
+
+      for record in records
+        record.newRecord = false
+        record[@fkey] = @record.id
+        @model.records[record.id] = record
+
+      @model.trigger('refresh', @model.cloneArray(records))
+
+    create: (record) ->
       record[@fkey] = @record.id
-      @model.records[record.id] = record
+      @model.create(record)
 
-    @model.trigger('refresh', @model.cloneArray(records))
+    # Private
 
-  create: (record) ->
-    record[@fkey] = @record.id
-    @model.create(record)
+    associated: (record) ->
+      record[@fkey] is @record.id
 
-  # Private
+  class Instance extends Spine.Module
+    constructor: (options = {}) ->
+      for key, value of options
+        @[key] = value
 
-  associated: (record) ->
-    record[@fkey] is @record.id
+    exists: ->
+      @record[@fkey] and @model.exists(@record[@fkey])
 
-class Instance extends Spine.Module
-  constructor: (options = {}) ->
-    for key, value of options
-      @[key] = value
+    update: (value) ->
+      unless value instanceof @model
+        value = new @model(value)
+      value.save() if value.isNew()
+      @record[@fkey] = value and value.id
 
-  exists: ->
-    @record[@fkey] and @model.exists(@record[@fkey])
+  class Singleton extends Spine.Module
+    constructor: (options = {}) ->
+      for key, value of options
+        @[key] = value
 
-  update: (value) ->
-    unless value instanceof @model
-      value = new @model(value)
-    value.save() if value.isNew()
-    @record[@fkey] = value and value.id
+    find: ->
+      @record.id and @model.findByAttribute(@fkey, @record.id)
 
-class Singleton extends Spine.Module
-  constructor: (options = {}) ->
-    for key, value of options
-      @[key] = value
+    update: (value) ->
+      unless value instanceof @model
+        value = @model.fromJSON(value)
 
-  find: ->
-    @record.id and @model.findByAttribute(@fkey, @record.id)
+      value[@fkey] = @record.id
+      value.save()
 
-  update: (value) ->
-    unless value instanceof @model
-      value = @model.fromJSON(value)
+  singularize = (str) ->
+    str.replace(/s$/, '')
 
-    value[@fkey] = @record.id
-    value.save()
+  underscore = (str) ->
+    str.replace(/::/g, '/')
+       .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+       .replace(/([a-z\d])([A-Z])/g, '$1_$2')
+       .replace(/-/g, '_')
+       .toLowerCase()
 
-singularize = (str) ->
-  str.replace(/s$/, '')
+  Spine.Model.extend
+    hasMany: (name, model, fkey) ->
+      fkey ?= "#{underscore(this.className)}_id"
 
-underscore = (str) ->
-  str.replace(/::/g, '/')
-     .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
-     .replace(/([a-z\d])([A-Z])/g, '$1_$2')
-     .replace(/-/g, '_')
-     .toLowerCase()
+      association = (record) ->
+        model = demand(model) if typeof model is 'string'
 
-Spine.Model.extend
-  hasMany: (name, model, fkey) ->
-    fkey ?= "#{underscore(this.className)}_id"
+        new Collection(
+          name: name, model: model,
+          record: record, fkey: fkey
+        )
 
-    association = (record) ->
-      model = require(model) if typeof model is 'string'
+      @::[name] = (value) ->
+        association(@).refresh(value) if value?
+        association(@)
 
-      new Collection(
-        name: name, model: model,
-        record: record, fkey: fkey
-      )
+    belongsTo: (name, model, fkey) ->
+      fkey ?= "#{singularize(name)}_id"
 
-    @::[name] = (value) ->
-      association(@).refresh(value) if value?
-      association(@)
+      association = (record) ->
+        model = demand(model) if typeof model is 'string'
 
-  belongsTo: (name, model, fkey) ->
-    fkey ?= "#{singularize(name)}_id"
+        new Instance(
+          name: name, model: model,
+          record: record, fkey: fkey
+        )
 
-    association = (record) ->
-      model = require(model) if typeof model is 'string'
+      @::[name] = (value) ->
+        association(@).update(value) if value?
+        association(@).exists()
 
-      new Instance(
-        name: name, model: model,
-        record: record, fkey: fkey
-      )
+      @attributes.push(fkey)
 
-    @::[name] = (value) ->
-      association(@).update(value) if value?
-      association(@).exists()
+    hasOne: (name, model, fkey) ->
+      fkey ?= "#{underscore(@className)}_id"
 
-    @attributes.push(fkey)
+      association = (record) ->
+        model = demand(model) if typeof model is 'string'
 
-  hasOne: (name, model, fkey) ->
-    fkey ?= "#{underscore(@className)}_id"
+        new Singleton(
+          name: name, model: model,
+          record: record, fkey: fkey
+        )
 
-    association = (record) ->
-      model = require(model) if typeof model is 'string'
-
-      new Singleton(
-        name: name, model: model,
-        record: record, fkey: fkey
-      )
-
-    @::[name] = (value) ->
-      association(@).update(value) if value?
-      association(@).find()
+      @::[name] = (value) ->
+        association(@).update(value) if value?
+        association(@).find()
+  Spine
