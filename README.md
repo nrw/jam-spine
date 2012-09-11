@@ -1,3 +1,7 @@
+# Jam Spine
+
+[Spine](http://spinejs.com) modified to be installable with [jam](http://jamjs.org) and use [umd](https://github.com/umdjs/umd) patterns.
+
 # Spine
 
 [![Build Status](https://secure.travis-ci.org/maccman/spine.png)](http://travis-ci.org/maccman/spine)
