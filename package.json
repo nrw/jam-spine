@@ -3,6 +3,21 @@
   "description": "MVC Framework.",
   "version": "1.0.8",
   "author": "maccman",
+  "jam": {
+    "dependencies": {
+      "jquery": ">1.4.2"
+    },
+    "main": "lib/spine.js",
+    "include": [
+      "lib/ajax.js",
+      "lib/list.js",
+      "lib/local.js",
+      "lib/manager.js",
+      "lib/relation.js",
+      "lib/route.js",
+      "lib/spine.js"
+    ]
+  },
   "licenses":
     [{
       "type": "MIT",
